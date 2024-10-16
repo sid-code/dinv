@@ -513,6 +513,16 @@ Release Notes
   </alias>
 
   <alias
+   script="inv.cli.speculate.fn"
+   match="^[ ]*dinv[ ]+speculate[ ]+(apply|clear)(?:[ ]+([^ ]+?)[ ]+(.*))?$"
+   enabled="y"
+   regexp="y"
+   send_to="12"
+   sequence="100"
+  >
+  </alias>
+
+  <alias
    script="inv.cli.help.fn"
    match="^[ ]*dinv[ ]+help[ ]*([^ ]*)?[ ]*$"
    enabled="y"
@@ -1701,6 +1711,7 @@ function inv.cli.fullUsage()
   inv.cli.store.usage()
   inv.cli.keyword.usage()
   inv.cli.organize.usage()
+  inv.cli.speculate.usage()
 
   dbot.print("\n@C  Equipment sets@w")
   inv.cli.set.usage()
@@ -3719,6 +3730,74 @@ Example:
 
 end -- inv.cli.covet.examples
 
+inv.cli.speculate = {}
+
+function inv.cli.speculate.fn(name, line, wildcards)
+
+  local command = wildcards[1]
+  local statMods = wildcards[2]
+  local queryString = wildcards[3]
+
+  -- TODO: tags
+  -- local endTag = inv.tags.new(line)
+
+  if (command == "apply") then
+    inv.speculate.apply(statMods, queryString)
+  elseif (command == "clear") then
+    inv.speculate.clear()
+  else
+    dbot.error("speculate: invalid command @R" .. command .. "@W.")
+  end
+end
+
+function inv.cli.speculate.usage()
+  dbot.print("@W    " .. pluginNameCmd .. " speculate @G[apply <stat mods> <query> | clear]")
+end
+
+function inv.cli.speculate.examples()
+  dbot.print("@W\nUsage:\n")
+  inv.cli.speculate.usage()
+  dbot.print([[
+
+@WThis plugin's "@Cspeculate@W" feature allows you to add temporary stats to items.
+This lets you run analyses with items that haven't been enchanted yet, to figure
+out which ones you even want to enchant in the first place.
+
+A typical workflow would look like this:
+
+  1) Identify neck eq that need to be enchanted:
+     "@Gdinv search wearable neck ~flag solidified@W"
+
+  2) Apply a speculative stat modifier:
+     "@Gdinv speculate apply dam:+6,wis:+2,luck:+1 wearable neck ~flag solidified@W"
+
+  3) Run equipment analysis:
+     "@Gdinv analyze create <some priority>@W"
+
+  4) Look at which of these items, if enchanted, will be used:
+     "@Gdinv usage <some priority> wearable neck@W"
+
+  5) Clear the temporary stats:
+     "@Gdinv speculate clear@W"
+
+Here is an example value for the @G<stat mods>@W parameter: @Ywis:+3,dam:+6,luck:+4@W.
+
+Note: hitroll and damroll are "@Yhit@W" and "@Ydam@W" respectively.
+
+@WHere are some examples of usage:
+
+  1) Add +6 DR to all invis items:
+     "@Gdinv speculate apply dam:+6 flag invis@W"
+
+  2) Clear all speculations:
+     "@Gdinv speculate clear@W"
+
+@CNote@W: If you don't clear speculations before reloading the plugin (either manually
+or by restarting MUSHclient), they will persist and the "@Cclear@W" command won't work
+next time. If this happens, you'll have to do "@Gdinv refresh all@W".
+
+]])
+end
 
 inv.cli.notify = {}
 function inv.cli.notify.fn(name, line, wildcards)
@@ -13925,7 +14004,104 @@ inv.priority.fieldTable = {
 
 }
 
+----------------------------------------------------------------------------------------------------
+--
+-- Module to temporarily modify item stats.
+--
+-- inv.speculate.clear()
+-- inv.speculate.apply(statMods, queryString)
+-- inv.speculate.applyupdate(objId, stat, update)
+-- inv.speculate.speculateCR()
+--
+----------------------------------------------------------------------------------------------------
 
+inv.speculate = {}
+
+-- Table to store original objects before modifying them with speculate.
+speculatedItems = {}
+speculateStatFieldName = "speculated"
+
+function inv.speculate.clear()
+  for objId, origData in pairs(speculatedItems) do
+    dbot.note("speculate: @WRestoring @G" .. objId .. "@W to original data.")
+    inv.items.setEntry(objId, origData)
+  end
+end
+
+function inv.speculate.apply(statMods, queryString)
+  local statModTable = {}
+  for stat, mod in string.gmatch(statMods, "(%w+):([+-]?%d+)") do
+    if inv.stats[stat] == nil then
+      dbot.warn("speculate: @WInvalid stat @R" .. stat)
+    else
+      statModTable[stat] = mod
+    end
+  end
+
+  wait.make(inv.speculate.speculateCR(statModTable, queryString))
+end
+
+function inv.speculate.applyupdate(objId, stat, update)
+  local val = dbot.tonumber(inv.items.getStatField(objId, stat) or "0")
+  local newval
+  local modifierString = "Old value @c" .. val .. "@W. "
+  if (update:sub(1, 1) == "+") then
+    local amount = tonumber(update:sub(2))
+    newval = val + amount
+    modifierString = modifierString .. "@WApplied modifier: @G+" .. amount .. "@W."
+  elseif (update:sub(1, 1) == "-") then
+    local amount = tonumber(update:sub(2))
+    newval = val - amount
+    modifierString = modifierString .. "@WApplied modifier: @R-" .. amount .. "@W."
+  else
+    local amount = tonumber(update)
+    newval = amount
+    modifierString = modifierString .. "@WApplied modifier: @YSET TO @W" .. amount .. "@W."
+  end
+
+  if not inv.items.getStatField(objId, speculateStatFieldName) then
+    speculatedItems[objId] = dbot.table.getCopy(inv.items.getEntry(objId))
+    inv.items.setStatField(objId, speculateStatFieldName, true)
+  end
+
+  local oldName = inv.items.getField(objId, invFieldColorName)
+
+  inv.items.setStatField(objId, stat, newval)
+  inv.items.setField(objId, invFieldColorName, "@R!!@W " .. oldName)
+
+  dbot.note("@WUpdated item "  .. oldName .. "@W (" .. objId .. "@W)"
+            .. " @wstat @C" .. stat .. "@W. " .. modifierString)
+
+  return DRL_RET_SUCCESS
+end
+
+function inv.speculate.speculateCR(statModTable, queryString)
+  return function()
+    -- Get an array of object IDs that match the store request's query string
+    local idArray, retval = inv.items.searchCR(queryString)
+    if (retval ~= DRL_RET_SUCCESS) then
+      dbot.warn("speculateCR: failed to search inventory table: " .. dbot.retval.getString(retval))
+
+      -- Let the user know if no items matched their query
+    elseif (idArray == nil) or (#idArray == 0) then
+      dbot.info("No match found for speculate query: \"" .. queryString .. "\"")
+      retval = DRL_RET_MISSING_ENTRY
+
+      -- Modify the items matched by the query
+    else
+      for _, objId in ipairs(idArray) do
+        for stat, mod in pairs(statModTable) do
+          local retval = inv.speculate.applyupdate(objId, stat, mod)
+          if (retval ~= DRL_RET_SUCCESS) then
+            return retval
+          end
+        end
+      end
+    end
+
+    return retval
+  end
+end
 ----------------------------------------------------------------------------------------------------
 --
 -- Module to score items and sets based on a specified priority, level, and handicap
