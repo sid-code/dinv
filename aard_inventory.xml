@@ -3769,7 +3769,7 @@ A typical workflow would look like this:
      "@Gdinv search wearable neck ~flag solidified@W"
 
   2) Apply a speculative stat modifier:
-     "@Gdinv speculate apply dam:+6,wis:+2,luck:+1 wearable neck ~flag solidified@W"
+     "@Gdinv speculate apply dam:+6 wearable neck ~flag solidified@W"
 
   3) Run equipment analysis:
      "@Gdinv analyze create <some priority>@W"
@@ -3784,10 +3784,22 @@ Here is an example value for the @G<stat mods>@W parameter: @Ywis:+3,dam:+6,luck
 
 Note: hitroll and damroll are "@Yhit@W" and "@Ydam@W" respectively.
 
+Items modified by the "@Cspeculate@W" feature will show up with a marker (@R!!@W) when
+displayed by this plugin. For example:
+
+@g> @WLvl Name of Armor            Type       HR   DR Int Wis Lck Str Dex Con Res HitP Mana Move
+@g> @W 41 @YLeg Ends of @RGaardwolf    @wlegs        0 @G  10@W   0   0 @G  3@W   0   0 @G  5@W @G  4@W    0    0    0
+@g> @W 82@W @R!!@W @G(@WEnhanced@G)@W @WSi@Wlv@Wer Le  @wlegs     @G   9@W @G  22@W   0   0   0 @G  1@W   0 @w -2@W @G  8@W    0    0    0
+@g> @W 91@W @Da @YPharaoh@W'@Ys @MTan@W          @wlegs        0 @G  14@W   0   0 @G  3@W @G  2@W @G  6@W   0 @G  9@W    0    0    0
+@g> @W 95@W @G(@WPolished@G)@W full plate le @wlegs     @G   6@W @G  14@W @G  1@W @G  8@W @G  1@W   0   0   0 @G  9@W    0 @G  20@W    0
+@g> @W153@W @R!!@W @R(@WWondrous@R)@W a set of h @wlegs     @G   6@W @G  42@W @G  1@W @G  1@W @G  1@W @G  2@W @G  1@W @G 15@W @G 15@W @G  20@W @G 100@W    0
+@g> @W161@W @R!!@W @G(@WPolished@G)@W leather le @wlegs     @G   4@W @G  26@W   0   0   0 @G  1@W   0 @G  6@W @G 10@W @G  40@W @G  60@W @G  40@w
+
+
 @WHere are some examples of usage:
 
   1) Add +6 DR to all invis items:
-     "@Gdinv speculate apply dam:+6 flag invis@W"
+     "@Gdinv speculate apply dam:+6,wis:+4,luck:+1 ~flag solidified ~flag resonated ~flag illuminated @W"
 
   2) Clear all speculations:
      "@Gdinv speculate clear@W"
